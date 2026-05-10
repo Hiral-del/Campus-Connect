@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Smart Class Manager - Login to manage your classes">
+    <title>Login — Campus Connect</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="login-logo">
+                    <svg class="genz-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M15 7h3a5 5 0 0 1 5 5 5 5 0 0 1-5 5h-3m-6 0H6a5 5 0 0 1-5-5 5 5 0 0 1 5-5h3"></path>
+                        <line x1="8" y1="12" x2="16" y2="12"></line>
+                    </svg>
+                </div>
+                <h1>Campus Connect</h1>
+                <p class="mission-statement">An Academic Early-Warning System predicting risks and solving student dropouts through real-time insight.</p>
+            </div>
+
+            <div class="login-form">
+                <div class="input-group">
+                    <div class="input-wrapper">
+                        <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                        <input type="text" id="username" placeholder="Enter username" required>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <div class="input-wrapper">
+                        <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        <input type="password" id="password" placeholder="Enter password" required>
+                    </div>
+                </div>
+                <button class="btn" onclick="login()">Access System</button>
+                <div class="error-message" id="errorMsg"></div>
+            </div>
+
+            <div class="demo-creds">
+                <h4>Demo Credentials</h4>
+                <div class="cred-row" onclick="fillCreds('admin','admin123')">
+                    <span class="cred-role">Admin</span><span>admin / admin123</span>
+                </div>
+                <div class="cred-row" onclick="fillCreds('dr_sharma','prof123')">
+                    <span class="cred-role">Teacher</span><span>dr_sharma / prof123</span>
+                </div>
+                <div class="cred-row" onclick="fillCreds('ananya0','student123')">
+                    <span class="cred-role">Student</span><span>ananya0 / student123</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script>
+        const existingUser = getUser();
+        if (existingUser) redirectByRole(existingUser.role);
+
+        function fillCreds(u, p) {
+            document.getElementById('username').value = u;
+            document.getElementById('password').value = p;
+        }
+
+        async function login() {
+            const btn = document.querySelector('.btn');
+            const errEl = document.getElementById('errorMsg');
+            errEl.style.display = 'none';
+            btn.textContent = 'Authenticating...';
+            btn.disabled = true;
+
+            try {
+                const data = await apiPost('/api/login', {
+                    username: document.getElementById('username').value,
+                    password: document.getElementById('password').value,
+                });
+                setUser(data);
+                redirectByRole(data.role);
+            } catch (err) {
+                errEl.textContent = err.message || 'Access Denied';
+                errEl.style.display = 'block';
+                btn.textContent = 'Access System';
+                btn.disabled = false;
+            }
+        }
+
+        function redirectByRole(role) {
+            const pages = {
+                student: 'student-dashboard.html',
+                teacher: 'teacher-dashboard.html',
+                admin: 'admin-dashboard.html',
+            };
+            window.location.href = pages[role] || 'student-dashboard.html';
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard — Campus Connect</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- Top Bar -->
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <button class="menu-btn"><svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg></button>
+            <div class="top-bar-title">Unified B.Tech Academic Suite</div>
+        </div>
+        <div class="top-bar-center">
+            <div class="prompt-input-wrapper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="2" width="18" height="18"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="text" placeholder="Ask Campus Connect anything...">
+                <span class="shortcut-key">⌘K</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <aside class="sidebar" id="sidebar"></aside>
+        <main class="main-content">
+            <div class="page-header">
+                <h1>Admin Dashboard</h1>
+                <p>System overview and management</p>
+            </div>
+
+            <!-- Stats -->
+            <div class="stats-grid" id="statsGrid"></div>
+
+            <!-- Classes + Charts -->
+            <div class="grid-2">
+                <div class="card fade-in-up delay-2">
+                    <div class="card-header"><h3>🏫 Classes</h3></div>
+                    <div id="classesTable"><p style="color:var(--text-muted)">Loading...</p></div>
+                </div>
+                <div class="card fade-in-up delay-2">
+                    <div class="card-header"><h3>📊 Performance Distribution</h3></div>
+                    <div class="chart-container"><canvas id="statusChart"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Users + GPA -->
+            <div class="grid-2">
+                <div class="card fade-in-up delay-3">
+                    <div class="card-header"><h3>👥 Users</h3></div>
+                    <div id="usersTable"><p style="color:var(--text-muted)">Loading...</p></div>
+                </div>
+                <div class="card fade-in-up delay-3">
+                    <div class="card-header"><h3>🏆 GPA Leaderboard</h3></div>
+                    <div id="gpaTable"><p style="color:var(--text-muted)">Loading...</p></div>
+                </div>
+            </div>
+
+            <!-- Teachers + Announcements -->
+            <div class="grid-2">
+                <div class="card fade-in-up delay-4">
+                    <div class="card-header"><h3>👩‍🏫 Teachers</h3></div>
+                    <div id="teachersTable"><p style="color:var(--text-muted)">Loading...</p></div>
+                </div>
+                <div class="card fade-in-up delay-4">
+                    <div class="card-header"><h3>📢 Announcements</h3></div>
+                    <div id="announcementsList"><p style="color:var(--text-muted)">Loading...</p></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script>
+        const user = requireAuth(['admin']);
+        if (!user) throw new Error('Not authorized');
+        document.getElementById('sidebar').innerHTML = buildSidebar('admin', 'admin-dashboard');
+        getChartDefaults();
+
+        (async () => {
+            // Stats
+            const statsRes = await apiGet('/api/analytics/dashboard-stats');
+            const st = statsRes.stats;
+            document.getElementById('statsGrid').innerHTML = `
+                <div class="stat-card cyan fade-in-up delay-1">
+                    <div class="stat-icon">🏫</div>
+                    <div class="stat-value">${st.totalClasses}</div>
+                    <div class="stat-label">Total Classes</div>
+                </div>
+                <div class="stat-card blue fade-in-up delay-2">
+                    <div class="stat-icon">👩‍🎓</div>
+                    <div class="stat-value">${st.totalStudents}</div>
+                    <div class="stat-label">Total Students</div>
+                </div>
+                <div class="stat-card green fade-in-up delay-3">
+                    <div class="stat-icon">👩‍🏫</div>
+                    <div class="stat-value">${st.totalTeachers}</div>
+                    <div class="stat-label">Total Teachers</div>
+                </div>
+                <div class="stat-card red fade-in-up delay-4">
+                    <div class="stat-icon">📅</div>
+                    <div class="stat-value">${st.overallAttendance || 0}%</div>
+                    <div class="stat-label">Attendance Rate</div>
+                </div>
+            `;
+
+            // Classes table
+            const cRes = await apiGet('/api/classes');
+            if (cRes.classes.length) {
+                document.getElementById('classesTable').innerHTML = `
+                    <table class="data-table">
+                        <thead><tr><th>Class</th><th>Grade</th><th>Room</th><th>Students</th><th>Teachers</th></tr></thead>
+                        <tbody>${cRes.classes.map(c => `
+                            <tr>
+                                <td style="font-weight:600;color:var(--text-primary)">${c.class_name}</td>
+                                <td>${c.grade} - ${c.section}</td>
+                                <td>${c.room_number || '—'}</td>
+                                <td>${c.student_count}</td>
+                                <td>${c.teacher_names || '—'}</td>
+                            </tr>
+                        `).join('')}</tbody>
+                    </table>`;
+            }
+
+            // Status distribution chart
+            const statusColors = {
+                'Excellent': '#10b981', 'Good': '#3b82f6', 'Average': '#f59e0b',
+                'At Risk': '#ef4444', 'Failing': '#dc2626'
+            };
+            if (st.statusDistribution && st.statusDistribution.length) {
+                new Chart(document.getElementById('statusChart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: st.statusDistribution.map(s => s.performance_status),
+                        datasets: [{
+                            data: st.statusDistribution.map(s => s.count),
+                            backgroundColor: st.statusDistribution.map(s => statusColors[s.performance_status] || '#94a3b8'),
+                            borderWidth: 0, hoverOffset: 8,
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false,
+                        cutout: '65%', plugins: { legend: { position: 'bottom' } }
+                    }
+                });
+            }
+
+            // Users table
+            const uRes = await apiGet('/api/users');
+            document.getElementById('usersTable').innerHTML = `
+                <table class="data-table">
+                    <thead><tr><th>Username</th><th>Role</th><th>Joined</th></tr></thead>
+                    <tbody>${uRes.users.map(u => `
+                        <tr>
+                            <td style="font-weight:600;color:var(--text-primary)">${u.username}</td>
+                            <td>${getStatusBadge(u.role === 'admin' ? 'Excellent' : u.role === 'teacher' ? 'Good' : 'Average')}</td>
+                            <td>${formatDate(u.created_at)}</td>
+                        </tr>
+                    `).join('')}</tbody>
+                </table>`;
+
+            // GPA table
+            const gpaRes = await apiGet('/api/analytics/gpa');
+            document.getElementById('gpaTable').innerHTML = `
+                <table class="data-table">
+                    <thead><tr><th>#</th><th>Name</th><th>Class</th><th>GPA</th><th>Grade</th></tr></thead>
+                    <tbody>${gpaRes.data.map((g, i) => `
+                        <tr>
+                            <td>${i + 1}</td>
+                            <td style="font-weight:600;color:var(--text-primary)">${g.name}</td>
+                            <td>${g.class_name || '—'}</td>
+                            <td style="color:var(--accent-purple);font-weight:700">${g.gpa}</td>
+                            <td>${g.letter_grade}</td>
+                        </tr>
+                    `).join('')}</tbody>
+                </table>`;
+
+            // Teachers table
+            const tRes = await apiGet('/api/teachers');
+            document.getElementById('teachersTable').innerHTML = `
+                <table class="data-table">
+                    <thead><tr><th>Name</th><th>Department</th><th>Phone</th><th>Class Avg</th></tr></thead>
+                    <tbody>${tRes.teachers.map(t => `
+                        <tr>
+                            <td style="font-weight:600;color:var(--text-primary)">${t.name}</td>
+                            <td>${t.department || '—'}</td>
+                            <td>${t.phone || '—'}</td>
+                            <td style="color:var(--accent-cyan);font-weight:700">${t.avg_score || '—'}</td>
+                        </tr>
+                    `).join('')}</tbody>
+                </table>`;
+
+            // Announcements
+            const annRes = await apiGet('/api/announcements');
+            if (annRes.announcements.length) {
+                document.getElementById('announcementsList').innerHTML = annRes.announcements.map(a => `
+                    <div style="padding:12px 0;border-bottom:1px solid var(--border-glass)">
+                        <div style="font-weight:600;color:var(--text-primary)">${a.title}</div>
+                        <div style="font-size:13px;color:var(--text-muted);margin-top:4px">${a.content}</div>
+                        <div style="font-size:12px;color:var(--text-muted);margin-top:4px">
+                            ${a.class_name ? '📌 ' + a.class_name : '🌐 All Classes'} · by ${a.author}
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                document.getElementById('announcementsList').innerHTML = '<p style="color:var(--text-muted)">No announcements</p>';
+            }
+        })();
+    </script>
+</body>
+</html>

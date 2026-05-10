@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics — Campus Connect</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- Top Bar -->
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <button class="menu-btn"><svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg></button>
+            <div class="top-bar-title">Unified B.Tech Academic Suite</div>
+        </div>
+        <div class="top-bar-center">
+            <div class="prompt-input-wrapper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="2" width="18" height="18"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="text" placeholder="Ask Campus Connect anything...">
+                <span class="shortcut-key">⌘K</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <aside class="sidebar" id="sidebar"></aside>
+        <main class="main-content">
+            <div class="page-header">
+                <h1>📈 Analytics & Reports</h1>
+                <p>Detailed performance analysis across classes and students</p>
+            </div>
+
+            <!-- Class Performance Comparison -->
+            <div class="card fade-in-up delay-1 mb-24">
+                <div class="card-header"><h3>🏫 Class Performance Comparison</h3></div>
+                <div class="chart-container"><canvas id="classCompareChart"></canvas></div>
+            </div>
+
+            <!-- Top Performers + At Risk -->
+            <div class="grid-2">
+                <div class="card fade-in-up delay-2">
+                    <div class="card-header"><h3>🏆 Top Performers</h3></div>
+                    <div id="topPerformers"><p style="color:var(--text-muted)">Loading...</p></div>
+                </div>
+                <div class="card fade-in-up delay-2">
+                    <div class="card-header"><h3>⚠️ At-Risk Students</h3></div>
+                    <div id="atRiskStudents"><p style="color:var(--text-muted)">Loading...</p></div>
+                </div>
+            </div>
+
+            <!-- Subject Performance -->
+            <div class="card fade-in-up delay-3 mt-24">
+                <div class="card-header"><h3>📚 Subject-wise Performance</h3></div>
+                <div class="chart-container" style="min-height:350px"><canvas id="subjectChart"></canvas></div>
+            </div>
+
+            <!-- GPA Rankings -->
+            <div class="card fade-in-up delay-4 mt-24">
+                <div class="card-header"><h3>🎓 GPA Rankings</h3></div>
+                <div id="gpaRankings"><p style="color:var(--text-muted)">Loading...</p></div>
+            </div>
+
+            <!-- Attendance Analysis -->
+            <div class="card fade-in-up delay-4 mt-24">
+                <div class="card-header"><h3>📅 Attendance Analysis</h3></div>
+                <div class="chart-container"><canvas id="attChart"></canvas></div>
+            </div>
+        </main>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script>
+        const user = requireAuth(['teacher', 'admin']);
+        if (!user) throw new Error('Not authorized');
+        document.getElementById('sidebar').innerHTML = buildSidebar(user.role, 'analytics');
+        getChartDefaults();
+
+        (async () => {
+            // Class performance comparison
+            try {
+                const cpRes = await apiGet('/api/analytics/class-performance');
+                if (cpRes.data.length) {
+                    new Chart(document.getElementById('classCompareChart'), {
+                        type: 'bar',
+                        data: {
+                            labels: cpRes.data.map(c => c.class_name),
+                            datasets: [
+                                {
+                                    label: 'Class Average',
+                                    data: cpRes.data.map(c => c.class_average),
+                                    backgroundColor: chartColors.purple.bg,
+                                    borderColor: chartColors.purple.border,
+                                    borderWidth: 2,
+                                },
+                                {
+                                    label: 'Highest Score',
+                                    data: cpRes.data.map(c => c.highest_score),
+                                    backgroundColor: chartColors.green.bg,
+                                    borderColor: chartColors.green.border,
+                                    borderWidth: 2,
+                                },
+                                {
+                                    label: 'Lowest Score',
+                                    data: cpRes.data.map(c => c.lowest_score),
+                                    backgroundColor: chartColors.red.bg,
+                                    borderColor: chartColors.red.border,
+                                    borderWidth: 2,
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            scales: { y: { beginAtZero: true, max: 100 } }
+                        }
+                    });
+                }
+            } catch(e) { console.error(e); }
+
+            // Top performers
+            const avgRes = await apiGet('/api/analytics/average-scores');
+            const topStudents = avgRes.data.filter(s => s.average_score >= 80);
+            const atRiskStudents = avgRes.data.filter(s => s.average_score !== null && s.average_score < 55);
+
+            document.getElementById('topPerformers').innerHTML = topStudents.length ? `
+                <table class="data-table">
+                    <thead><tr><th>#</th><th>Name</th><th>Class</th><th>Avg Score</th><th>Status</th></tr></thead>
+                    <tbody>${topStudents.map((s, i) => `
+                        <tr>
+                            <td>${i + 1}</td>
+                            <td style="font-weight:600;color:var(--text-primary)">${s.name}</td>
+                            <td>${s.class_name || '—'}</td>
+                            <td style="color:var(--accent-green);font-weight:700">${s.average_score}</td>
+                            <td>${getStatusBadge(s.performance_status)}</td>
+                        </tr>
+                    `).join('')}</tbody>
+                </table>` : '<p style="color:var(--text-muted)">No top performers found</p>';
+
+            document.getElementById('atRiskStudents').innerHTML = atRiskStudents.length ? `
+                <table class="data-table">
+                    <thead><tr><th>#</th><th>Name</th><th>Class</th><th>Avg Score</th><th>Status</th></tr></thead>
+                    <tbody>${atRiskStudents.map((s, i) => `
+                        <tr>
+                            <td>${i + 1}</td>
+                            <td style="font-weight:600;color:var(--text-primary)">${s.name}</td>
+                            <td>${s.class_name || '—'}</td>
+                            <td style="color:var(--accent-red);font-weight:700">${s.average_score}</td>
+                            <td>${getStatusBadge(s.performance_status)}</td>
+                        </tr>
+                    `).join('')}</tbody>
+                </table>` : '<p style="color:var(--text-muted)">No at-risk students 🎉</p>';
+
+            // Subject performance chart
+            const spRes = await apiGet('/api/analytics/subject-performance');
+            const subjectNames = [...new Set(spRes.data.map(s => s.subject_name))];
+            const studentNames = [...new Set(spRes.data.map(s => s.student_name))];
+            const datasets = studentNames.map((name, i) => ({
+                label: name,
+                data: subjectNames.map(sub => {
+                    const match = spRes.data.find(d => d.student_name === name && d.subject_name === sub);
+                    return match ? match.avg_score : 0;
+                }),
+                backgroundColor: colorList[i % colorList.length].bg,
+                borderColor: colorList[i % colorList.length].border,
+                borderWidth: 2,
+            }));
+
+            new Chart(document.getElementById('subjectChart'), {
+                type: 'bar',
+                data: { labels: subjectNames, datasets },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, max: 100 } },
+                    plugins: { legend: { position: 'top' } }
+                }
+            });
+
+            // GPA Rankings
+            const gpaRes = await apiGet('/api/analytics/gpa');
+            document.getElementById('gpaRankings').innerHTML = `
+                <table class="data-table">
+                    <thead><tr><th>Rank</th><th>Name</th><th>Class</th><th>Avg Score</th><th>GPA</th><th>Grade</th></tr></thead>
+                    <tbody>${gpaRes.data.map((g, i) => `
+                        <tr>
+                            <td>${i + 1}</td>
+                            <td style="font-weight:600;color:var(--text-primary)">${g.name}</td>
+                            <td>${g.class_name || '—'}</td>
+                            <td>${g.average_score}</td>
+                            <td style="color:var(--accent-purple);font-weight:700">${g.gpa}</td>
+                            <td><span class="badge ${g.gpa >= 3.0 ? 'excellent' : g.gpa >= 2.0 ? 'good' : 'at-risk'}">${g.letter_grade}</span></td>
+                        </tr>
+                    `).join('')}</tbody>
+                </table>`;
+
+            // Attendance analysis per student
+            const summaryRes = await apiGet('/api/analytics/summary');
+            const attData = summaryRes.data.filter(s => s.total_attendance_days > 0);
+            if (attData.length) {
+                new Chart(document.getElementById('attChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: attData.map(s => s.name),
+                        datasets: [{
+                            label: 'Attendance %',
+                            data: attData.map(s => s.attendance_percentage),
+                            backgroundColor: attData.map(s =>
+                                s.attendance_percentage >= 90 ? chartColors.green.bg :
+                                s.attendance_percentage >= 75 ? chartColors.yellow.bg : chartColors.red.bg
+                            ),
+                            borderColor: attData.map(s =>
+                                s.attendance_percentage >= 90 ? chartColors.green.border :
+                                s.attendance_percentage >= 75 ? chartColors.yellow.border : chartColors.red.border
+                            ),
+                            borderWidth: 2,
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: { y: { beginAtZero: true, max: 100 } }
+                    }
+                });
+            }
+        })();
+    </script>
+</body>
+</html>

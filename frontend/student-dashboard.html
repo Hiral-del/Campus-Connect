@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Dashboard — Campus Connect</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- Top Bar -->
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <button class="menu-btn"><svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg></button>
+            <div class="top-bar-title">Unified B.Tech Academic Suite</div>
+        </div>
+        <div class="top-bar-center">
+            <div class="prompt-input-wrapper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="2" width="18" height="18"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="text" placeholder="Ask Campus Connect anything...">
+                <span class="shortcut-key">⌘K</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <aside class="sidebar" id="sidebar"></aside>
+        <main class="main-content">
+            <div class="page-header">
+                <h1 id="welcomeTitle">Welcome back</h1>
+                <p id="classInfo">Loading your class info...</p>
+            </div>
+
+            <!-- Stat Cards -->
+            <div class="stats-grid" id="statsGrid"></div>
+
+            <!-- Charts Row -->
+            <div class="grid-2">
+                <div class="card fade-in-up delay-2">
+                    <div class="card-header"><h3>📊 Subject-wise Marks</h3></div>
+                    <div class="chart-container"><canvas id="marksChart"></canvas></div>
+                </div>
+                <div class="card fade-in-up delay-3">
+                    <div class="card-header"><h3>📅 Attendance Overview</h3></div>
+                    <div class="chart-container"><canvas id="attendanceChart"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Timetable + Assignments -->
+            <div class="grid-2">
+                <div class="card fade-in-up delay-3">
+                    <div class="card-header"><h3>🕐 Today's Timetable</h3></div>
+                    <div id="timetableContent"><p style="color:var(--text-muted)">Loading...</p></div>
+                </div>
+                <div class="card fade-in-up delay-4">
+                    <div class="card-header"><h3>📝 My Assignments</h3></div>
+                    <div id="assignmentsList"><p style="color:var(--text-muted)">Loading...</p></div>
+                </div>
+            </div>
+
+            <!-- Announcements -->
+            <div class="card fade-in-up delay-4">
+                <div class="card-header"><h3>📢 Announcements</h3></div>
+                <div id="announcementsList"><p style="color:var(--text-muted)">Loading...</p></div>
+            </div>
+        </main>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script>
+        const user = requireAuth(['student']);
+        if (!user) throw new Error('Not authorized');
+        const sid = user.student_id;
+        const cid = user.class_id;
+
+        document.getElementById('sidebar').innerHTML = buildSidebar('student', 'student-dashboard');
+        document.getElementById('welcomeTitle').textContent = `Welcome back, ${user.name || user.username}`;
+        getChartDefaults();
+
+        (async () => {
+            // Load summary
+            const summaryRes = await apiGet(`/api/analytics/summary?student_id=${sid}`);
+            const me = summaryRes.data[0];
+
+            if (me) {
+                document.getElementById('classInfo').textContent = `${me.class_name} · Roll #${me.roll_number}`;
+                document.getElementById('statsGrid').innerHTML = `
+                    <div class="stat-card cyan fade-in-up delay-1">
+                        <div class="stat-icon">📈</div>
+                        <div class="stat-value" id="avgVal">0</div>
+                        <div class="stat-label">Average Score</div>
+                    </div>
+                    <div class="stat-card blue fade-in-up delay-2">
+                        <div class="stat-icon">🎓</div>
+                        <div class="stat-value" id="attVal">0%</div>
+                        <div class="stat-label">Attendance Rate</div>
+                    </div>
+                    <div class="stat-card green fade-in-up delay-3">
+                        <div class="stat-icon">📝</div>
+                        <div class="stat-value">${me.graded_submissions}/${me.total_submissions}</div>
+                        <div class="stat-label">Assignments Graded</div>
+                    </div>
+                    <div class="stat-card red fade-in-up delay-4">
+                        <div class="stat-icon">⭐</div>
+                        <div class="stat-value">${getStatusBadge(me.performance_status)}</div>
+                        <div class="stat-label">Status</div>
+                    </div>
+                `;
+                animateValue(document.getElementById('avgVal'), 0, me.avg_score);
+                const attEl = document.getElementById('attVal');
+                animateValue(attEl, 0, me.attendance_percentage);
+                setTimeout(() => { attEl.textContent = me.attendance_percentage + '%'; }, 1100);
+            }
+
+            // Marks chart
+            const marksRes = await apiGet(`/api/marks/${sid}`);
+            const subjectMap = {};
+            marksRes.marks.forEach(m => {
+                if (!subjectMap[m.subject_name]) subjectMap[m.subject_name] = [];
+                subjectMap[m.subject_name].push(m.score);
+            });
+            const subjects = Object.keys(subjectMap);
+            const avgScores = subjects.map(s => {
+                const scores = subjectMap[s];
+                return Math.round(scores.reduce((a,b) => a+b, 0) / scores.length * 100) / 100;
+            });
+
+            new Chart(document.getElementById('marksChart'), {
+                type: 'bar',
+                data: {
+                    labels: subjects,
+                    datasets: [{
+                        label: 'Average Score',
+                        data: avgScores,
+                        backgroundColor: colorList.map(c => c.bg),
+                        borderColor: colorList.map(c => c.border),
+                        borderWidth: 2,
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, max: 100 } }
+                }
+            });
+
+            // Attendance chart
+            const attRes = await apiGet(`/api/attendance/${sid}`);
+            const attCounts = { Present: 0, Absent: 0, Late: 0 };
+            attRes.attendance.forEach(a => { attCounts[a.status] = (attCounts[a.status] || 0) + 1; });
+
+            new Chart(document.getElementById('attendanceChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['Present', 'Absent', 'Late'],
+                    datasets: [{
+                        data: [attCounts.Present, attCounts.Absent, attCounts.Late],
+                        backgroundColor: ['#10b981', '#ef4444', '#f59e0b'],
+                        borderWidth: 0, hoverOffset: 8,
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false,
+                    cutout: '65%', plugins: { legend: { position: 'bottom' } }
+                }
+            });
+
+            // Timetable
+            if (cid) {
+                try {
+                    const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                    const today = days[new Date().getDay()] || 'Monday';
+                    const ttRes = await apiGet(`/api/timetable/${cid}?day=${today}`);
+                    if (ttRes.timetable.length) {
+                        document.getElementById('timetableContent').innerHTML = `
+                            <table class="data-table">
+                                <thead><tr><th>Time</th><th>Subject</th><th>Teacher</th></tr></thead>
+                                <tbody>${ttRes.timetable.map(t => `
+                                    <tr>
+                                        <td>${t.start_time} - ${t.end_time}</td>
+                                        <td>${t.subject_name}</td>
+                                        <td>${t.teacher_name || '—'}</td>
+                                    </tr>
+                                `).join('')}</tbody>
+                            </table>`;
+                    } else {
+                        document.getElementById('timetableContent').innerHTML = '<p style="color:var(--text-muted)">No classes today 🎉</p>';
+                    }
+                } catch { document.getElementById('timetableContent').innerHTML = '<p style="color:var(--text-muted)">Unable to load timetable</p>'; }
+            }
+
+            // Assignments
+            try {
+                const subRes = await apiGet(`/api/assignment-submissions/${sid}`);
+                if (subRes.submissions.length) {
+                    document.getElementById('assignmentsList').innerHTML = `
+                        <table class="data-table">
+                            <thead><tr><th>Title</th><th>Subject</th><th>Score</th><th>Status</th></tr></thead>
+                            <tbody>${subRes.submissions.map(a => `
+                                <tr>
+                                    <td>${a.title}</td>
+                                    <td>${a.subject_name}</td>
+                                    <td>${a.score !== null ? a.score + '/' + a.max_score : '—'}</td>
+                                    <td>${getStatusBadge(a.status === 'Graded' ? 'Good' : a.status === 'Late' ? 'At Risk' : 'Average')}</td>
+                                </tr>
+                            `).join('')}</tbody>
+                        </table>`;
+                } else {
+                    document.getElementById('assignmentsList').innerHTML = '<p style="color:var(--text-muted)">No assignments yet</p>';
+                }
+            } catch { document.getElementById('assignmentsList').innerHTML = '<p style="color:var(--text-muted)">Unable to load assignments</p>'; }
+
+            // Announcements
+            try {
+                const annRes = await apiGet(`/api/announcements?class_id=${cid}`);
+                if (annRes.announcements.length) {
+                    document.getElementById('announcementsList').innerHTML = annRes.announcements.map(a => `
+                        <div style="padding:12px 0;border-bottom:1px solid var(--border-glass)">
+                            <div style="font-weight:600;color:var(--text-primary)">${a.title}</div>
+                            <div style="font-size:13px;color:var(--text-muted);margin-top:4px">${a.content}</div>
+                            <div style="font-size:12px;color:var(--text-muted);margin-top:4px">
+                                ${a.class_name ? '📌 ' + a.class_name : '🌐 All Classes'} · ${formatDate(a.created_at)}
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    document.getElementById('announcementsList').innerHTML = '<p style="color:var(--text-muted)">No announcements</p>';
+                }
+            } catch { document.getElementById('announcementsList').innerHTML = '<p style="color:var(--text-muted)">Unable to load announcements</p>'; }
+        })();
+    </script>
+</body>
+</html>
